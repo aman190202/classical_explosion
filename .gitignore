@@ -7,3 +7,5 @@ Makefile
 .DS_Store
 CMakeLists.txt.user
 /v1
+output/*
+*.mp4
