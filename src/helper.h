@@ -79,12 +79,12 @@ void getBoundingBox(const std::string& vdbFilePath, Vector3d& min, Vector3d& max
 
 void populateSetsFromVDB(const std::string& vdbFilePath,
                         std::unordered_set<Vector3d, Vec3Hash, Vec3Equal>& densityLocations,
-                        std::unordered_set<Vector3d, Vec3Hash, Vec3Equal>& temperatureLocations) {
+                        std::unordered_set<Vector3d, Vec3Hash, Vec3Equal>& temperatureLocations,
+                        Vector3d& min, Vector3d& max) {
     // Initialize the sampler
     initializeSampler(vdbFilePath);
     
     // Get the bounding box of the volume
-    Vector3d min, max;
     try {
         getBoundingBox(vdbFilePath, min, max);
         std::cout << "Bounding Box Coordinates:" << std::endl;
@@ -98,26 +98,86 @@ void populateSetsFromVDB(const std::string& vdbFilePath,
     // Initialize grid lookup
     initializeGridLookup(min, max);
     
-    // Sample points in the volume
-    for (double x = min.x(); x <= max.x(); x += 0.1) {
-        for (double y = min.y(); y <= max.y(); y += 0.1) {
-            for (double z = min.z(); z <= max.z(); z += 0.1) {
-                Vector3d position(x, y, z);
+    // // Sample points in the volume
+    // for (double x = min.x(); x <= max.x(); x += 0.1) {
+    //     for (double y = min.y(); y <= max.y(); y += 0.1) {
+    //         for (double z = min.z(); z <= max.z(); z += 0.1) {
+    //             Vector3d position(x, y, z);
                 
-                // Get values at this position
-                float temperature, density;
-                getValues(position, temperature, density);
+    //             // Get values at this position
+    //             float temperature, density;
+    //             getValues(position, temperature, density);
                 
-                // If there's a non-zero value, add to the appropriate set
-                if (density > 0.0) {
-                    densityLocations.insert(position);
-                }
-                if (temperature > 0.0) {
-                    temperatureLocations.insert(position);
-                }
-            }
-        }
+    //             // If there's a non-zero value, add to the appropriate set
+    //             if (density > 0.0) {
+    //                 densityLocations.insert(position);
+    //             }
+    //             if (temperature > 0.0) {
+    //                 temperatureLocations.insert(position);
+    //             }
+    //         }
+    //     }
+    // }
+}
+
+bool checkCornellBoxIntersect(const Vector3d& rayOrigin, const Vector3d& rayDir, float& t)
+{
+    // Constants for Cornell box
+    // Wall colors
+    const Vector3d RED(0.8, 0.1, 0.1);
+    const Vector3d GREEN(0.1, 0.8, 0.1);
+    const Vector3d WHITE(0.8, 0.8, 0.8);
+    const Vector3d LIGHT_COLOR(1.0, 1.0, 0.9);
+
+    Vector3d finalColor(0.0, 0.0, 0.0);
+
+    // Create Cornell box walls
+    // FLOOR
+    Plane floor(Vector3d(0, -30, 0), Vector3d(0, 1, 0), WHITE);
+    // CEILING
+    Plane ceiling(Vector3d(0, 30, 0), Vector3d(0, -1, 0), WHITE);
+    // BACK WALL
+    Plane back(Vector3d(0, 0, -15), Vector3d(0, 0, 1), WHITE);
+    // Left wall (red
+    Plane left(Vector3d(-15, 0, 0), Vector3d(1, 0, 0), RED);
+    // Right wall (green)
+    Plane right(Vector3d(15, 0, 0), Vector3d(-1, 0, 0), GREEN);
+
+    double minT = std::numeric_limits<double>::infinity();
+    const Plane* closestPlane = nullptr;
+
+    Vector3d color;
+
+    // Check intersections with all walls
+    double intersectionT;   
+
+    if (floor.intersect(rayOrigin, rayDir, intersectionT) && intersectionT < minT) {
+        minT = intersectionT;
+        closestPlane = &floor;
+    }   
+    if (ceiling.intersect(rayOrigin, rayDir, intersectionT) && intersectionT < minT) {
+        minT = intersectionT;
+        closestPlane = &ceiling;
     }
+    if (back.intersect(rayOrigin, rayDir, intersectionT) && intersectionT < minT) {
+        minT = intersectionT;
+        closestPlane = &back;
+    }   
+    if (left.intersect(rayOrigin, rayDir, intersectionT) && intersectionT < minT) {
+        minT = intersectionT;
+        closestPlane = &left;
+    }   
+    if (right.intersect(rayOrigin, rayDir, intersectionT) && intersectionT < minT) {
+        minT = intersectionT;
+        closestPlane = &right;
+    }
+
+    if (closestPlane) {
+        t = minT;
+        return true;
+    }
+
+    return false;
 }
 
 
@@ -139,15 +199,15 @@ Vector3d CornellBox(const Vector3d& rayOrigin, const Vector3d& rayDir, float& t,
 
     // Create Cornell box walls
     // FLOOR
-    Plane floor(Vector3d(0, -10, 0), Vector3d(0, 1, 0), WHITE);
+    Plane floor(Vector3d(0, -30, 0), Vector3d(0, 1, 0), WHITE);
     // CEILING
-    Plane ceiling(Vector3d(0, 10, 0), Vector3d(0, -1, 0), WHITE);
+    Plane ceiling(Vector3d(0, 30, 0), Vector3d(0, -1, 0), WHITE);
     // BACK WALL
-    Plane back(Vector3d(0, 0, -5), Vector3d(0, 0, 1), WHITE);
+    Plane back(Vector3d(0, 0, -15), Vector3d(0, 0, 1), WHITE);
     // Left wall (red
-    Plane left(Vector3d(-5, 0, 0), Vector3d(1, 0, 0), RED);
+    Plane left(Vector3d(-15, 0, 0), Vector3d(1, 0, 0), RED);
     // Right wall (green)
-    Plane right(Vector3d(5, 0, 0), Vector3d(-1, 0, 0), GREEN);
+    Plane right(Vector3d(15, 0, 0), Vector3d(-1, 0, 0), GREEN);
 
 
     double minT = std::numeric_limits<double>::infinity();
@@ -192,7 +252,7 @@ Vector3d CornellBox(const Vector3d& rayOrigin, const Vector3d& rayDir, float& t,
         std::uniform_int_distribution<> dis(0, lights.size() - 1);
         
         #pragma omp parallel for
-        for (int i = 0; i < lights.size()/10000; i++) {
+        for (int i = 0; i <= lights.size()/100; i++) {
             int randomIndex = dis(gen);
             const auto& light = lights[randomIndex];    
             Vector3d lightDir = (light.position - intersectionPoint).normalized();

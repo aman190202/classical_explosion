@@ -16,7 +16,7 @@ module load miniconda3/23.11.0s
 source /oscar/runtime/software/external/miniconda3/23.11.0/etc/profile.d/conda.sh
 conda activate graphics
 cd build && cmake .. && make && cd ..
-./build/explosion v1/untitled.filecache1_v1.0007.vdb
+./build/explosion v1/untitled.filecache1_v1.0024.vdb
 
 # Print completion time
 echo "Job finished at $(date)" 

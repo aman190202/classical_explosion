@@ -37,7 +37,7 @@ int main(int argc, char* argv[])
     
     // Create camera inside the Cornell box
     Camera camera(
-        Eigen::Vector3d(0, 0, 30),  // Moved camera closer
+        Eigen::Vector3d(0, 0, 100),  // Moved camera closer
         Eigen::Vector3d(0, 0, 0),   // Look at the center
         Eigen::Vector3d(0, 1, 0),   // Up vector
         45.0,                       // Increased field of view
@@ -50,40 +50,40 @@ int main(int argc, char* argv[])
     std::unordered_set<Vector3d, Vec3Hash, Vec3Equal> temperatureLocations;
     
     // Populate sets from VDB file
-    populateSetsFromVDB(vdbFilePath, densityLocations, temperatureLocations);  
+    Vector3d min, max;
+    populateSetsFromVDB(vdbFilePath, densityLocations, temperatureLocations, min, max);  
 
-    // get min and max temperature
-    float minTemperature = std::numeric_limits<float>::infinity();
-    float maxTemperature = -std::numeric_limits<float>::infinity();
-    for (const auto& location : temperatureLocations) 
-    {
-        float temperature, density; 
-        getValues(location, temperature, density);
-        minTemperature = std::min(minTemperature, temperature);
-        maxTemperature = std::max(maxTemperature, temperature);
-    }
+    // // get min and max temperature
+    // float minTemperature = std::numeric_limits<float>::infinity();
+    // float maxTemperature = -std::numeric_limits<float>::infinity();
+    // for (const auto& location : temperatureLocations) 
+    // {
+    //     float temperature, density; 
+    //     getValues(location, temperature, density);
+    //     minTemperature = std::min(minTemperature, temperature);
+    //     maxTemperature = std::max(maxTemperature, temperature);
+    // }
 
-    float minDensity = std::numeric_limits<float>::infinity();
-    float maxDensity = -std::numeric_limits<float>::infinity();
-    for (const auto& location : densityLocations) 
-    {
-        float temperature, density; 
-        getValues(location, temperature, density);
-        minDensity = std::min(minDensity, density);
-        maxDensity = std::max(maxDensity, density);
-    }       
+    // float minDensity = std::numeric_limits<float>::infinity();
+    // float maxDensity = -std::numeric_limits<float>::infinity();
+    // for (const auto& location : densityLocations) 
+    // {
+    //     float temperature, density; 
+    //     getValues(location, temperature, density);
+    //     minDensity = std::min(minDensity, density);
+    //     maxDensity = std::max(maxDensity, density);
+    // }       
 
     // bounding box of the volume
-    Vector3d min, max;
-    getBoundingBox(vdbFilePath, min, max);
+    
     std::cout << "Bounding Box: " << min << " " << max << std::endl;
 
     float og1 = min[1];
     float og2 = max[1];
 
     float difference = (max[1] - min[1]) ;
-    max[1] = difference - 10;
-    min[1] = -10;
+    max[1] = difference - 30;
+    min[1] = -30;
 
     
     //OUTPUT NUMBER OF OPENMP THREADS
@@ -91,18 +91,19 @@ int main(int argc, char* argv[])
 
     // fill light vector from temperature locations and get color based on temperature
     std::vector<Light> lights;
+    lights.push_back(Light(Vector3d(0, 0, 0), Vector3d(1.0, 1.0, 1.0), 1.0));
 
-    for (const auto& location : temperatureLocations) 
-    {
-        float temperature, density;
-        getValues(location, temperature, density);
-        temperature = (temperature - minTemperature) / (maxTemperature - minTemperature);
-        Vector3d color = interpolateColor(temperature);
-        float intensity = 1.0f;  // Cap intensity at 1.0
-        Vector3d location_copy = location;
-        location_copy[1] -= 10;
-        lights.push_back(Light(location_copy, color, intensity));
-    }
+    // for (const auto& location : temperatureLocations) 
+    // {
+    //     float temperature, density;
+    //     getValues(location, temperature, density);
+    //     temperature = (temperature - minTemperature) / (maxTemperature - minTemperature);
+    //     Vector3d color = interpolateColor(temperature);
+    //     float intensity = 1.0f;  // Cap intensity at 1.0
+    //     Vector3d location_copy = location;
+    //     location_copy[1] -= 10;
+    //     lights.push_back(Light(location_copy, color, intensity));
+    // }
 
     std::cout << "Lights: " << lights.size() << std::endl;
 
@@ -132,14 +133,32 @@ int main(int argc, char* argv[])
 
                     float c_t;
                     float t;
-                    Eigen::Vector3d sampleColor;
-                    if (rayIntersectsVolume(rayOrigin, rayDir, min, max, t)) 
+                    Eigen::Vector3d sampleColor{0.0, 0.0, 0.0};
+                    float cb, vb;
+                    bool is_c = checkCornellBoxIntersect(rayOrigin, rayDir, cb);
+                    bool is_v = rayIntersectsVolume(rayOrigin, rayDir, min, max, vb);
+                    if(is_c && is_v)
                     {
-                        sampleColor = getVolumeColor(rayOrigin, rayDir, min, max, og1, og2, minTemperature, maxTemperature, minDensity, maxDensity, t, lights);
+                        if(cb < vb)
+                        {
+                            sampleColor = CornellBox(rayOrigin, rayDir, c_t, lights);
+                        }
+                        else
+                        {
+                            sampleColor = Vector3d(1.0, 0.0, 0.0); //getVolumeColor(rayOrigin, rayDir, min, max, og1, og2, minTemperature, maxTemperature, minDensity, maxDensity, t, lights);
+                        }
+                    }
+                    else if(is_c)
+                    {
+                        sampleColor = CornellBox(rayOrigin, rayDir, c_t, lights);
+                    }
+                    else if(is_v)
+                    {
+                        sampleColor = Vector3d(0.0, 1.0, 0.0); //getVolumeColor(rayOrigin, rayDir, min, max, og1, og2, minTemperature, maxTemperature, minDensity, maxDensity, t, lights);
                     }
                     else
                     {
-                        sampleColor = CornellBox(rayOrigin, rayDir, c_t, lights);
+                        sampleColor = Vector3d(0.0, 0.0, 0.0);
                     }
                     
                     // Apply tone mapping to each sample

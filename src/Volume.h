@@ -52,7 +52,7 @@ Vector3d cL(const Vector3d& location, float og1)
 {
     // i made the lower bound of the volume -10 and pushed down the upper bound so that the volume remains the same size
     // so i need to convert the location to the original volume, og1 is the original lower bound and og2 is the original upper bound
-    float difference = og1 + 10;
+    float difference = og1 + 30;
 
     return Vector3d(location[0], location[1] + difference, location[2]);
 }
@@ -64,6 +64,7 @@ float BeerLambert(float absorption, float distance)
 
 Vector3d getVolumeColor(const Vector3d& rayOrigin, const Vector3d& rayDirection, const Vector3d& m, const Vector3d& n, float og1, float og2, float minTemperature, float maxTemperature, float minDensity, float maxDensity, float t, std::vector<Light>& lights) 
 {
+    return Vector3d(1, 0, 0);
     Vector3d min = m;
     Vector3d max = n;
 
@@ -80,15 +81,25 @@ Vector3d getVolumeColor(const Vector3d& rayOrigin, const Vector3d& rayDirection,
     Vector3d accumulatedColor(0.0, 0.0, 0.0);
     float acc_density = 0.0;
 
+    float step_size = depth / 20;
+    
     for(int i = 0; i < 20; i++)
     {
-        
+        Vector3d position = rayOrigin + i * step_size * rayDirection;
+        float temperature, density;
+        position = cL(position, og1);
+        getValues(position, temperature, density);
+        acc_density += density;
     }   
 
-    if(acc_density < 1.0)
+    if(acc_density < 0.1)
     {
         float c_t;
-        accumulatedColor = accumulatedColor.cwiseProduct(CornellBox(rayOrigin, rayDirection, c_t, lights));
+        accumulatedColor = acc_density * Vector3d(.5, .5, .5) + (1 - acc_density) * CornellBox(rayOrigin, rayDirection, c_t, lights);
+    }
+    else
+    {
+        accumulatedColor = acc_density * Vector3d(.5, .5, .5);
     }
 
     return accumulatedColor;
