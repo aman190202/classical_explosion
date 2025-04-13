@@ -13,20 +13,10 @@
 #include "src/Box.h"
 #include "src/Plane.h"
 #include "src/Light.h"
+#include "src/Volume.h"
 #include <atomic>
 
 using namespace Eigen;
-
-Vector3d interpolateColor(float temperature) {
-    // temperature is already normalized between 0 and 1
-    // Interpolate between red (1,0,0) and white (1,1,1)
-    float r = 1.0f;  // Red component stays at 1
-    float g = temperature;  // Green and blue interpolate from 0 to 1
-    float b = temperature;
-    return Vector3d(r, g, b);
-}
-
-
 
 int main(int argc, char* argv[]) 
 {
@@ -73,8 +63,29 @@ int main(int argc, char* argv[])
         maxTemperature = std::max(maxTemperature, temperature);
     }
 
-    
+    float minDensity = std::numeric_limits<float>::infinity();
+    float maxDensity = -std::numeric_limits<float>::infinity();
+    for (const auto& location : densityLocations) 
+    {
+        float temperature, density; 
+        getValues(location, temperature, density);
+        minDensity = std::min(minDensity, density);
+        maxDensity = std::max(maxDensity, density);
+    }       
 
+    // bounding box of the volume
+    Vector3d min, max;
+    getBoundingBox(vdbFilePath, min, max);
+    std::cout << "Bounding Box: " << min << " " << max << std::endl;
+
+    float og1 = min[1];
+    float og2 = max[1];
+
+    float difference = (max[1] - min[1]) ;
+    max[1] = difference - 10;
+    min[1] = -10;
+
+    
     //OUTPUT NUMBER OF OPENMP THREADS
     std::cout << "Number of OpenMP threads: " << omp_get_max_threads() << std::endl;
 
@@ -88,7 +99,9 @@ int main(int argc, char* argv[])
         temperature = (temperature - minTemperature) / (maxTemperature - minTemperature);
         Vector3d color = interpolateColor(temperature);
         float intensity = 1.0f;  // Cap intensity at 1.0
-        lights.push_back(Light(location, color, intensity));
+        Vector3d location_copy = location;
+        location_copy[1] -= 10;
+        lights.push_back(Light(location_copy, color, intensity));
     }
 
     std::cout << "Lights: " << lights.size() << std::endl;
@@ -118,7 +131,16 @@ int main(int argc, char* argv[])
                     Eigen::Vector3d rayOrigin = camera.getPosition();
 
                     float c_t;
-                    Eigen::Vector3d sampleColor = CornellBox(rayOrigin, rayDir, c_t, lights);
+                    float t;
+                    Eigen::Vector3d sampleColor;
+                    if (rayIntersectsVolume(rayOrigin, rayDir, min, max, t)) 
+                    {
+                        sampleColor = getVolumeColor(rayOrigin, rayDir, min, max, og1, og2, minTemperature, maxTemperature, minDensity, maxDensity, t, lights);
+                    }
+                    else
+                    {
+                        sampleColor = CornellBox(rayOrigin, rayDir, c_t, lights);
+                    }
                     
                     // Apply tone mapping to each sample
                     sampleColor = sampleColor.cwiseQuotient(sampleColor + Vector3d(1.0, 1.0, 1.0));

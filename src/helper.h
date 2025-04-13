@@ -19,6 +19,16 @@ struct Vec3Hash {
     }
 };
 
+Vector3d interpolateColor(float temperature) 
+{
+    // temperature is already normalized between 0 and 1
+    // Interpolate between red (1,0,0) and white (1,1,1)
+    float r = 1.0f;  // Red component stays at 1
+    float g = temperature;  // Green and blue interpolate from 0 to 1
+    float b = temperature;
+    return Vector3d(r, g, b);
+}
+
 // Custom equality function for Vector3d
 struct Vec3Equal {
     bool operator()(const Vector3d& v1, const Vector3d& v2) const {
@@ -182,7 +192,7 @@ Vector3d CornellBox(const Vector3d& rayOrigin, const Vector3d& rayDir, float& t,
         std::uniform_int_distribution<> dis(0, lights.size() - 1);
         
         #pragma omp parallel for
-        for (int i = 0; i < lights.size()/100; i++) {
+        for (int i = 0; i < lights.size()/10000; i++) {
             int randomIndex = dis(gen);
             const auto& light = lights[randomIndex];    
             Vector3d lightDir = (light.position - intersectionPoint).normalized();
