@@ -2,6 +2,7 @@
 #include <Eigen/Dense>
 #include <functional>
 #include <iostream>
+#include <iomanip>
 #include <string>
 #include <omp.h>
 #include "src/sampler.h"
@@ -10,210 +11,144 @@
 #include "src/Image.h"
 #include "src/Camera.h"
 #include "src/Box.h"
+#include "src/Plane.h"
+#include "src/Light.h"
+#include <atomic>
 
 using namespace Eigen;
 
-struct Light
+Vector3d interpolateColor(float temperature) {
+    // temperature is already normalized between 0 and 1
+    // Interpolate between red (1,0,0) and white (1,1,1)
+    float r = 1.0f;  // Red component stays at 1
+    float g = temperature;  // Green and blue interpolate from 0 to 1
+    float b = temperature;
+    return Vector3d(r, g, b);
+}
+
+
+
+int main(int argc, char* argv[]) 
 {
-    Vector3d position;
-    Vector3d color;
-    
-    Light(const Vector3d& pos, const Vector3d& col) : position(pos), color(col) {}
-};
-
-// Constants for volumetric rendering
-const double ABSORPTION_COEFFICIENT = 0.5;
-const double SCATTERING_COEFFICIENT = 0.3;
-const double MARCH_SIZE = 0.1;
-const int MAX_VOLUME_MARCH_STEPS = 100;
-const double MIN_TRANSMITTANCE = 0.01;
-
-// Beer-Lambert law for light absorption
-double beerLambert(double absorption, double distance) {
-    return exp(-absorption * distance);
-}
-
-// Light attenuation based on distance
-double lightAttenuation(double distance) {
-    return 1.0 / (1.0 + 0.1 * distance + 0.01 * distance * distance);
-}
-
-int main(int argc, char* argv[]) {
     if (argc != 2) {
         std::cerr << "Usage: " << argv[0] << " <vdb_file_path>" << std::endl;
         return 1;
     }
     
     std::string vdbFilePath = argv[1];
-    
-    // Unordered sets for density and temperature locations
-    std::unordered_set<Vector3d, Vec3Hash, Vec3Equal> densityLocations;
-    std::unordered_set<Vector3d, Vec3Hash, Vec3Equal> temperatureLocations;
-    
-    // Populate sets from VDB file
-    populateSetsFromVDB(vdbFilePath, densityLocations, temperatureLocations);
-    
-    // Print the number of points in each set
-    std::cout << "Number of density points: " << densityLocations.size() << std::endl;
-    std::cout << "Number of temperature points: " << temperatureLocations.size() << std::endl;
-
-
-    // check for density and temperature at a specific point
-    Vector3d point(0.0, 0.0, 0.0);
-    float density, temperature;
-    getValues(point, temperature, density);
-    
-    // get maximum density and temperature and minimum density and temperature
-    float maxDensity = 0.0;
-    float minDensity = 1.0;
-    float maxTemperature = 0.0;
-    float minTemperature = 1.0;     
-
-    for (const auto& location : densityLocations) {
-        float density, temperature;
-        getValues(location, temperature, density);
-        maxDensity = std::max(maxDensity, density);
-        minDensity = std::min(minDensity, density);
-    }
-
-    for (const auto& location : temperatureLocations)
-    {
-        float temperature;
-        getValues(location, temperature, density);
-        maxTemperature = std::max(maxTemperature, temperature);
-        minTemperature = std::min(minTemperature, temperature);
-    }
-
-    std::cout << "Max density: " << maxDensity << std::endl;
-    std::cout << "Min density: " << minDensity << std::endl;
-    std::cout << "Max temperature: " << maxTemperature << std::endl;
-    std::cout << "Min temperature: " << minTemperature << std::endl;
-
-    // get bounding box of the volume
-    Vector3d min, max;
-    getBoundingBox(vdbFilePath, min, max);
-    std::cout << "Bounding Box Coordinates:" << std::endl;
-    std::cout << "Min: (" << min.x() << ", " << min.y() << ", " << min.z() << ")" << std::endl;
-    std::cout << "Max: (" << max.x() << ", " << max.y() << ", " << max.z() << ")" << std::endl;
-
-    std::vector<Light> lights;
-    // go through all temperature points and get the light position and color and add to the vector, where color is white for 1 and red for 0.5 and if temperature is less than 0.5 then dont add it to the vector
-    for (const auto& location : temperatureLocations)
-    {
-        float temperature;
-        getValues(location, temperature, density);
-        temperature = (temperature - minTemperature) / (maxTemperature - minTemperature);
-
-        if(temperature > 0.5)
-        {
-            Vector3d loc{location.x(), location.y(), location.z()};
-            // interpolate between white and red based on temperature
-            Vector3d color = Vector3d(1.0, 0.0, 0.0) * temperature + Vector3d(0.0, 0.0, 1.0) * (1.0 - temperature);
-            lights.push_back(Light(loc, color));
-        }
-    }
-
-    std::cout << "Number of lights: " << lights.size() << std::endl;
-
+    // Extract filename from vdb file path
+    std::string fileName = vdbFilePath.substr(vdbFilePath.find_last_of("/") + 1);
+    fileName = fileName.substr(0, fileName.find_last_of("."));
 
     // Create image
     const int width = 1920;
     const int height = 1080;
     Image image(width, height);
     
-    // Create camera
+    // Create camera inside the Cornell box
     Camera camera(
-        Eigen::Vector3d(0, 25, 15),  // Position camera above and behind the ground
-        Eigen::Vector3d(0, 0, 0),    // Look at the origin
-        Eigen::Vector3d(0, 1, 0),    // Up vector
-        60.0,                        // Field of view
+        Eigen::Vector3d(0, 0, 30),  // Moved camera closer
+        Eigen::Vector3d(0, 0, 0),   // Look at the center
+        Eigen::Vector3d(0, 1, 0),   // Up vector
+        45.0,                       // Increased field of view
         static_cast<double>(width) / height, // Aspect ratio
-        0.1,                         // Near plane
-        1000.0                       // Far plane
+        0.1,                        // Near plane
+        1000.0                      // Far plane
     );
 
-    // Set number of threads (optional, OpenMP will use all available by default)
-    // omp_set_num_threads(4);
+    std::unordered_set<Vector3d, Vec3Hash, Vec3Equal> densityLocations;
+    std::unordered_set<Vector3d, Vec3Hash, Vec3Equal> temperatureLocations;
+    
+    // Populate sets from VDB file
+    populateSetsFromVDB(vdbFilePath, densityLocations, temperatureLocations);  
+
+    // get min and max temperature
+    float minTemperature = std::numeric_limits<float>::infinity();
+    float maxTemperature = -std::numeric_limits<float>::infinity();
+    for (const auto& location : temperatureLocations) 
+    {
+        float temperature, density; 
+        getValues(location, temperature, density);
+        minTemperature = std::min(minTemperature, temperature);
+        maxTemperature = std::max(maxTemperature, temperature);
+    }
+
+    
+
+    //OUTPUT NUMBER OF OPENMP THREADS
+    std::cout << "Number of OpenMP threads: " << omp_get_max_threads() << std::endl;
+
+    // fill light vector from temperature locations and get color based on temperature
+    std::vector<Light> lights;
+
+    for (const auto& location : temperatureLocations) 
+    {
+        float temperature, density;
+        getValues(location, temperature, density);
+        temperature = (temperature - minTemperature) / (maxTemperature - minTemperature);
+        Vector3d color = interpolateColor(temperature);
+        float intensity = 1.0f;  // Cap intensity at 1.0
+        lights.push_back(Light(location, color, intensity));
+    }
+
+    std::cout << "Lights: " << lights.size() << std::endl;
+
+    // Add atomic counter for progress tracking
+    std::atomic<int> completedRows(0);
+
+    const int samplesPerPixel = 4;  // 4x4 grid = 16 samples per pixel
+    const double sampleStep = 1.0 / samplesPerPixel;
+    const double sampleOffset = sampleStep / 2.0;
 
     #pragma omp parallel for
     for (int y = 0; y < height; ++y) 
     {
         for (int x = 0; x < width; ++x) 
         {
-            double u = static_cast<double>(x) / width;
-            double v = 1.0 - static_cast<double>(y) / height;
-            Eigen::Vector3d rayDir = camera.generateRay(u, v);
-            Eigen::Vector3d rayOrigin = camera.getPosition();
             Eigen::Vector3d finalColor(0.0, 0.0, 0.0);
-            float acc_density = 0.0;
-            double tMin, tMax;
-            Box box(min, max);
-            if (intersectBox(rayOrigin, rayDir, box, tMin, tMax)) 
-            {
-                Eigen::Vector3d hitPoint = rayOrigin + tMin * rayDir;
-                Eigen::Vector3d exitPoint = rayOrigin + tMax * rayDir;
+            
+            // Supersampling loop
+            for (int sy = 0; sy < samplesPerPixel; ++sy) {
+                for (int sx = 0; sx < samplesPerPixel; ++sx) {
+                    // Calculate sub-pixel position
+                    double u = (static_cast<double>(x) + sx * sampleStep + sampleOffset) / width;
+                    double v = 1.0 - (static_cast<double>(y) + sy * sampleStep + sampleOffset) / height;
 
-                // sample ray while transmittance is significant
-                double transmittance = 1.0;
-                Eigen::Vector3d accumulatedColor(0.0, 0.0, 0.0);
-                double volumeDepth = 0.0;
-                
-                while (transmittance > MIN_TRANSMITTANCE && volumeDepth < (tMax - tMin)) 
-                {
-                    double previousTransmittance = transmittance;
-                    Eigen::Vector3d samplePosition = hitPoint + volumeDepth * (exitPoint - hitPoint).normalized();
-                    getValues(samplePosition, temperature, density);
+                    Eigen::Vector3d rayDir = camera.generateRay(u, v);
+                    Eigen::Vector3d rayOrigin = camera.getPosition();
+
+                    float c_t;
+                    Eigen::Vector3d sampleColor = CornellBox(rayOrigin, rayDir, c_t, lights);
                     
-                    //normalize density and temperature
-                    density = (density - minDensity) / (maxDensity - minDensity);
-                    temperature = (temperature - minTemperature) / (maxTemperature - minTemperature);
+                    // Apply tone mapping to each sample
+                    sampleColor = sampleColor.cwiseQuotient(sampleColor + Vector3d(1.0, 1.0, 1.0));
+                    sampleColor = sampleColor.array().pow(1.0/2.2);
                     
-                    // Calculate absorption using Beer-Lambert law
-                    double absorption = beerLambert(ABSORPTION_COEFFICIENT * density, MARCH_SIZE);
-                    transmittance *= absorption;
-                    
-                    // Calculate light contribution from each light source
-                    if (density > 0.0) {
-                        Eigen::Vector3d lightContribution(0.0, 0.0, 0.0);
-                        
-                        // Add contribution from each light
-                        for (const auto& light : lights) {
-                            Eigen::Vector3d lightDir = (light.position - samplePosition).normalized();
-                            double lightDistance = (light.position - samplePosition).norm();
-                            double attenuation = lightAttenuation(lightDistance);
-                            
-                            // Simple phase function (isotropic scattering)
-                            double phase = 1.0 / (4.0 * M_PI);
-                            
-                            // Calculate light contribution
-                            lightContribution += light.color * attenuation * phase * density;
-                        }
-                        
-                        // Add ambient light contribution
-                        Eigen::Vector3d ambientLight(0.1, 0.1, 0.1);
-                        lightContribution += ambientLight * density;
-                        
-                        // Add the light contribution to the accumulated color
-                        double absorptionFromMarch = previousTransmittance - transmittance;
-                        accumulatedColor += absorptionFromMarch * lightContribution;
-                    }
-                    
-                    volumeDepth += MARCH_SIZE;
+                    finalColor += sampleColor;
                 }
-                
-                finalColor = accumulatedColor;
             }
+            
+            // Average the samples
+            finalColor /= (samplesPerPixel * samplesPerPixel);
+
             #pragma omp critical
             {
                 image.setPixel(x, y, finalColor.x(), finalColor.y(), finalColor.z());
             }
         }
+        
+        // Update progress after completing a row
+        completedRows++;
+        #pragma omp critical
+        {
+            float progress = (float)completedRows / height * 100.0f;
+            std::cout << "\rRendering progress: " << std::fixed << std::setprecision(1) << progress << "%" << std::flush;
+        }
     }
     
-    // Save image to file with vdb file name - remove the path and .vdb extension   
-    std::string fileName = vdbFilePath.substr(vdbFilePath.find_last_of("/") + 1);
-    fileName = fileName.substr(0, fileName.find_last_of("."));
-    image.savePPM("output/" + fileName + ".ppm");
+    // Save final image
+    std::string finalFileName = "output/" + fileName + ".ppm";
+    image.savePPM(finalFileName);
     
     return 0;
 }
