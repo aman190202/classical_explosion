@@ -1,5 +1,9 @@
 #include "Eigen/Dense"
 #include "sampler.h"
+#include "Light.h"
+#include <algorithm>
+#include <iostream>
+#include <omp.h>
 
 
 // create a function that takes in ray origin, ray direction, min and max of volume and returns whether the ray intersects the volume 
@@ -64,7 +68,7 @@ float BeerLambert(float absorption, float distance)
 
 Vector3d getVolumeColor(const Vector3d& rayOrigin, const Vector3d& rayDirection, const Vector3d& m, const Vector3d& n, float og1, float og2, float minTemperature, float maxTemperature, float minDensity, float maxDensity, float t, std::vector<Light>& lights) 
 {
-    return Vector3d(1, 0, 0);
+
     Vector3d min = m;
     Vector3d max = n;
 
@@ -74,28 +78,30 @@ Vector3d getVolumeColor(const Vector3d& rayOrigin, const Vector3d& rayDirection,
     float marchSize = 0.1f;
     float volumeDepth = 0.0f;
 
-    float depth = m[2] - n[2];
+
 
     // grey color
     Vector3d color(.5, .5, .5);
     Vector3d accumulatedColor(0.0, 0.0, 0.0);
     float acc_density = 0.0;
 
-    float step_size = depth / 20;
+    float step_size = 0.1;
     
-    for(int i = 0; i < 20; i++)
+    for(int i = 1; i < 100; i++)
     {
-        Vector3d position = rayOrigin + i * step_size * rayDirection;
-        float temperature = getTemperature(position);
-        //float density = getDensity(position);
+        Vector3d position = intersection + i * step_size * rayDirection;
+
         position = cL(position, og1);
+        float temperature = getTemperature(position);
+
         acc_density += temperature;
-    }   
+    }
+
 
     if(acc_density < 0.1)
     {
         float c_t;
-        accumulatedColor = acc_density * Vector3d(.5, .5, .5) + (1 - acc_density) * CornellBox(rayOrigin, rayDirection, c_t, lights);
+        accumulatedColor =  CornellBox(rayOrigin, rayDirection, c_t, lights);
     }
     else
     {
@@ -105,3 +111,66 @@ Vector3d getVolumeColor(const Vector3d& rayOrigin, const Vector3d& rayDirection,
     return accumulatedColor;
 }
 
+std::vector<Light> fillLights(Vector3d min, Vector3d max)
+{
+    int m1 = min[0];
+    int m2 = min[1];
+    int m3 = min[2];
+    int M1 = max[0];
+    int M2 = max[1];
+    int M3 = max[2];
+    std::vector<Light> lights;
+
+    #pragma omp parallel
+    {
+        std::vector<Light> local_lights;
+        #pragma omp for collapse(3) nowait
+        for(int i = m1; i <= M1; i++)
+        {
+            for(int j = m2; j <= M2; j++)
+            {
+                for(int k = m3; k <= M3; k++)
+                {
+                    float temperature = getTemperature(Vector3d(i, j, k));
+                    if(temperature < 0.6f)
+                        continue;
+                    Vector3d color;
+                    // Enhanced color mapping for explosion simulation
+                    // Temperature ranges from 0.6 to 1.3
+                    if (temperature < 0.8f) {
+                        // 0.6-0.8: Dark red to bright red
+                        float t = (temperature - 0.6f) / 0.2f;
+                        color = Vector3d(0.5f + 0.5f * t, 0.0f, 0.0f);
+                    }
+                    else if (temperature < 0.9f) {
+                        // 0.8-0.9: Red to orange
+                        float t = (temperature - 0.8f) / 0.1f;
+                        color = Vector3d(1.0f, t * 0.7f, 0.0f);
+                    }
+                    else if (temperature < 1.0f) {
+                        // 0.9-1.0: Orange to yellow
+                        float t = (temperature - 0.9f) / 0.1f;
+                        color = Vector3d(1.0f, 0.7f + 0.3f * t, t * 0.5f);
+                    }
+                    else {
+                        // 1.0-1.3: Yellow to white hot
+                        float t = (temperature - 1.0f) / 0.3f;
+                        if (t > 1.0f) t = 1.0f; // Manual clamping
+                        color = Vector3d(1.0f, 1.0f, 0.5f + 0.5f * t);
+                    }
+                    // Intensity also increases with temperature
+                    float intensity = 0.5f + 0.5f * temperature;
+                    if (intensity > 1.0f) intensity = 1.0f; // Manual clamping
+                    local_lights.push_back(Light(Vector3d(i, j, k), color, intensity));
+                }
+            }
+        }
+        #pragma omp critical
+        {
+            lights.insert(lights.end(), local_lights.begin(), local_lights.end());
+        }
+    }
+
+    std::cout<<" "<<lights.size()<<" ";
+    return lights;
+}

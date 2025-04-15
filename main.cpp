@@ -30,9 +30,17 @@ int main(int argc, char* argv[])
     std::string fileName = vdbFilePath.substr(vdbFilePath.find_last_of("/") + 1);
     fileName = fileName.substr(0, fileName.find_last_of("."));
 
+    // Initialize the sampler with the VDB file
+    try {
+        initializeSampler(vdbFilePath);
+    } catch (const std::exception& e) {
+        std::cerr << "Error initializing sampler: " << e.what() << std::endl;
+        return 1;
+    }
+
     // Create image
-    const int width = 1920;
-    const int height = 1080;
+    const int width = 640;
+    const int height = 480;
     Image image(width, height);
     
     // Create camera inside the Cornell box
@@ -49,8 +57,16 @@ int main(int argc, char* argv[])
     Vector3d min_density, max_density, min_temperature, max_temperature; // bounfing box of the volume
     getBoundingBox(vdbFilePath, min_density, max_density, min_temperature, max_temperature);
 
+    // Initialize the grid lookup with the bounding box
+    try {
+        initializeGridLookup(min_temperature, max_temperature);
+    } catch (const std::exception& e) {
+        std::cerr << "Error initializing grid lookup: " << e.what() << std::endl;
+        return 1;
+    }
     
     float temperature = getTemperature((min_temperature + max_temperature) / 2);
+    std::cout<<temperature;
     float density = getDensity((min_density + max_density) / 2);
 
     float og1 = min_temperature[1];
@@ -64,13 +80,16 @@ int main(int argc, char* argv[])
     Vector3d min = min_temperature;
     Vector3d max = max_temperature;
 
+    float m_density = 0;
+    float mi_density = 0;
+
     
     //OUTPUT NUMBER OF OPENMP THREADS
     std::cout << "Number of OpenMP threads: " << omp_get_max_threads() << std::endl;
 
     // fill light vector from temperature locations and get color based on temperature
-    std::vector<Light> lights;
-    lights.push_back(Light(Vector3d(0, 0, 0), Vector3d(1.0, 1.0, 1.0), 1.0));
+    std::vector<Light> lights = fillLights(min, max);
+    
 
     std::cout << "Lights: " << lights.size() << std::endl;
 
@@ -81,7 +100,7 @@ int main(int argc, char* argv[])
     const double sampleStep = 1.0 / samplesPerPixel;
     const double sampleOffset = sampleStep / 2.0;
 
-    #pragma omp parallel for
+
     for (int y = 0; y < height; ++y) 
     {
         for (int x = 0; x < width; ++x) 
@@ -112,7 +131,7 @@ int main(int argc, char* argv[])
                         }
                         else
                         {
-                            sampleColor = Vector3d(1.0, 0.0, 0.0); //getVolumeColor(rayOrigin, rayDir, min, max, og1, og2, minTemperature, maxTemperature, minDensity, maxDensity, t, lights);
+                            sampleColor = getVolumeColor(rayOrigin, rayDir, min, max, og1, og2, m_density, m_density, m_density, m_density, vb, lights);
                         }
                     }
                     else if(is_c)
@@ -121,7 +140,7 @@ int main(int argc, char* argv[])
                     }
                     else if(is_v)
                     {
-                        sampleColor = Vector3d(0.0, 1.0, 0.0); //getVolumeColor(rayOrigin, rayDir, min, max, og1, og2, minTemperature, maxTemperature, minDensity, maxDensity, t, lights);
+                        sampleColor = getVolumeColor(rayOrigin, rayDir, min, max, og1, og2, m_density, m_density, m_density, m_density, vb, lights);
                     }
                     else
                     {

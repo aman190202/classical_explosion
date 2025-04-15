@@ -10,23 +10,13 @@ if(DEFINED ENV{CONDA_PREFIX})
     set(CONDA_PREFIX $ENV{CONDA_PREFIX})
     message(STATUS "Using Conda environment at: ${CONDA_PREFIX}")
 else()
-    message(STATUS "CONDA_PREFIX not set, using Homebrew paths")
-    set(CONDA_PREFIX "/opt/homebrew")
+    message(FATAL_ERROR "CONDA_PREFIX environment variable not set. Please activate your Conda environment first.")
 endif()
 
-# Set paths for packages
+# Set paths for Conda packages
 set(TBB_INCLUDE_DIR "${CONDA_PREFIX}/include")
 set(OpenMP_CXX_INCLUDE_DIR "${CONDA_PREFIX}/include")
-set(OpenMP_CXX_LIBRARY "${CONDA_PREFIX}/Cellar/libomp/20.1.2/lib/libomp.dylib")
-
-# Set OpenMP flags for macOS
-if(APPLE)
-    set(OpenMP_C_FLAGS "-Xclang -fopenmp")
-    set(OpenMP_CXX_FLAGS "-Xclang -fopenmp")
-    set(OpenMP_C_LIB_NAMES "omp")
-    set(OpenMP_CXX_LIB_NAMES "omp")
-    set(OpenMP_omp_LIBRARY "${CONDA_PREFIX}/Cellar/libomp/20.1.2/lib/libomp.dylib")
-endif()
+set(OpenMP_CXX_LIBRARY "${CONDA_PREFIX}/lib/libomp.so")
 
 # Find required packages
 find_package(TBB REQUIRED)
@@ -37,9 +27,9 @@ option(USE_OPENVDB "Use OpenVDB for VDB file support" ON)
 
 if(USE_OPENVDB)
     set(OpenVDB_INCLUDE_DIR "${CONDA_PREFIX}/include/openvdb")
-    set(OpenVDB_LIBRARY "${CONDA_PREFIX}/lib/libopenvdb.dylib")
+    set(OpenVDB_LIBRARY "${CONDA_PREFIX}/lib/libopenvdb.so")
     if(NOT EXISTS ${OpenVDB_INCLUDE_DIR} OR NOT EXISTS ${OpenVDB_LIBRARY})
-        message(FATAL_ERROR "OpenVDB not found. Please install it using: brew install openvdb")
+        message(FATAL_ERROR "OpenVDB not found in Conda environment. Please install it using: conda install openvdb")
     endif()
 endif()
 
@@ -59,11 +49,10 @@ target_include_directories(explosion PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/external/Eigen
     ${TBB_INCLUDE_DIRS}
-    ${CONDA_PREFIX}/Cellar/libomp/20.1.2/include
 )
 
 # Link directories
-link_directories(${CONDA_PREFIX}/lib ${CONDA_PREFIX}/Cellar/libomp/20.1.2/lib)
+link_directories(${CONDA_PREFIX}/lib)
 
 # Link libraries
 target_link_libraries(explosion PRIVATE

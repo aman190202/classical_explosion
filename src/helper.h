@@ -225,10 +225,9 @@ Vector3d CornellBox(const Vector3d& rayOrigin, const Vector3d& rayDir, float& t,
         std::mt19937 gen(rd());
         std::uniform_int_distribution<> dis(0, lights.size() - 1);
         
-        #pragma omp parallel for
-        for (int i = 0; i <= lights.size()/100; i++) {
-            int randomIndex = dis(gen);
-            const auto& light = lights[randomIndex];    
+        for (int i = 0; i <= lights.size(); i++) 
+        {
+            const auto& light = lights[i];    
             Vector3d lightDir = (light.position - intersectionPoint).normalized();
             float diffuse = std::max(0.0f, static_cast<float>(normal.dot(lightDir)));
             // Add light contribution to base color
