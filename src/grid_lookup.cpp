@@ -105,11 +105,6 @@ public:
         return interpolate(densityGrid, pos);
     }
     
-    // Get both temperature and density at a 3D position
-    void getValues(const Eigen::Vector3d& pos, float& temperature, float& density) const {
-        temperature = getTemperature(pos);
-        density = getDensity(pos);
-    }
 };
 
 // Global grid lookup instance
@@ -137,10 +132,3 @@ float getDensity(const Eigen::Vector3d& pos) {
     return gridLookup->getDensity(pos);
 }
 
-// Get both temperature and density at a 3D position
-void getValues(const Eigen::Vector3d& pos, float& temperature, float& density) {
-    if (!gridLookup) {
-        throw std::runtime_error("Grid lookup not initialized");
-    }
-    gridLookup->getValues(pos, temperature, density);
-} 

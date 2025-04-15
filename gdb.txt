@@ -1,0 +1,7 @@
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib64/libthread_db.so.1".
+[Inferior 1 (process 1627570) exited normally]
+gdb_commands.txt:4: Error in sourced command file:
+No stack.
+Missing separate debuginfos, use: dnf debuginfo-install glibc-2.34-60.el9.x86_64 tbb-2020.3-8.el9.x86_64
+(gdb) quit

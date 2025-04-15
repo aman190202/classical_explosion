@@ -1,0 +1,6 @@
+set logging on
+set logging file gdb_output.txt
+run v1/untitled.filecache1_v1.0007.vdb
+bt
+info locals
+quit

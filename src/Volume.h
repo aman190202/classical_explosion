@@ -86,10 +86,10 @@ Vector3d getVolumeColor(const Vector3d& rayOrigin, const Vector3d& rayDirection,
     for(int i = 0; i < 20; i++)
     {
         Vector3d position = rayOrigin + i * step_size * rayDirection;
-        float temperature, density;
+        float temperature = getTemperature(position);
+        //float density = getDensity(position);
         position = cL(position, og1);
-        getValues(position, temperature, density);
-        acc_density += density;
+        acc_density += temperature;
     }   
 
     if(acc_density < 0.1)
